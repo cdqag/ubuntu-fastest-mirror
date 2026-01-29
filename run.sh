@@ -5,7 +5,7 @@
 #================================================================
 #% SYNOPSIS
 #%    ./run [-h|--help] [-c|--country <country-code> ...] [-s|--size <size-in-kb>]
-#%          [-L|--legacy] [-a|--auto] [-b|--backup] 
+#%          [-L|--legacy] [-a|--auto] [-b|--backup] [-m|--mirror-file <path>]
 #%
 #% DESCRIPTION
 #%   This script retrieves a list of Ubuntu mirrors based on specified country codes.
@@ -24,6 +24,8 @@
 #%    -c, --country    Specify one or more country codes to retrieve mirrors from. If not
 #%                     provided, the script will default to using mirrors from
 #%                     http://mirrors.ubuntu.com/mirrors.txt.
+#%    -m, --mirror-file Specify a custom mirror.txt file to use instead of fetching from URLs.
+#%                     When this option is used, country codes are not required.
 #%    -a, --auto       Select fastest mirror automatically without user
 #%                     prompt and automatically create backups.
 #%    -b, --backup     Backup apt sources files before making changes.
@@ -46,11 +48,16 @@
 #%    ./run -b -c ID
 #%    ./run -a
 #%    ./run -s 500
+#%    ./run -m /path/to/custom-mirrors.txt
+#%    ./run -m mirrors.txt -a
 #%    ./run
 #%
 #% AUTHOR
 #%    Jastria Rahmat
 #%    https://github.com/ijash
+#%
+#%    CDQ AG
+#%    https://www.cdq.com
 #%
 #% LICENSE
 #%    Distributed under the MIT License.
@@ -69,6 +76,7 @@ top_mirrors=()
 backup=false
 test_size_in_kb=100
 force_legacy_mode=false
+custom_mirror_file=""
 
 # Function to clean up cache on exit
 cleanup_cache() {
@@ -141,6 +149,18 @@ process_arguments() {
                 shift
             done
             continue 
+            ;;
+        -m | --mirror-file)
+            shift
+            if [[ -z "$1" || "$1" =~ ^- ]]; then
+                echo "Error: --mirror-file requires a file path argument."
+                exit 1
+            fi
+            custom_mirror_file="$1"
+            if [[ ! -f "$custom_mirror_file" ]]; then
+                echo "Error: Mirror file '$custom_mirror_file' not found."
+                exit 1
+            fi
             ;;
         -a | --auto-select)
             check_root
@@ -245,6 +265,20 @@ display_ubuntu_info() {
 
 # Function to fetch mirrors
 fetch_mirrors() {
+    # Skip fetching if custom mirror file is provided
+    if [[ -n "$custom_mirror_file" ]]; then
+        echo "Using custom mirror file: $custom_mirror_file"
+        mkdir -p "$SCRIPT_DIR/.cache" || {
+            echo "Error: Failed to create cache directory."
+            exit 1
+        }
+        cp "$custom_mirror_file" "$SCRIPT_DIR/.cache/mirrors.txt" || {
+            echo "Error: Failed to copy custom mirror file to cache."
+            exit 1
+        }
+        return 0
+    fi
+
     mkdir -p "$SCRIPT_DIR/.cache" || {
         echo "Error: Failed to create cache directory."
         exit 1
@@ -307,6 +341,12 @@ test_mirror_speed() {
 
 # Function to check country code and retrieve mirrors
 check_country_code() {
+    # Skip country code validation if custom mirror file is provided
+    if [[ -n "$custom_mirror_file" ]]; then
+        echo "Using custom mirror file, skipping country code validation."
+        return 0
+    fi
+
     if [ "${#COUNTRY_CODE_INCLUDED[@]}" -eq 0 ]; then
         COUNTRY_CODE_INCLUDED=("mirrors")
         echo "No country code provided using -c or --country options"
